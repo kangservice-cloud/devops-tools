@@ -1,0 +1,33 @@
+name: Prepare Environment
+description: 'Prepare Environment'
+
+outputs:
+  environment:
+    description: "Environment"
+    value: ${{ steps.global.outputs.ENVIRONMENT }}
+  environment_suffix :
+    description: "Environment Suffix"
+    value: ${{ steps.global.outputs.ENVIRONMENT_SUFFIX }}
+
+
+runs:
+  using: "composite"
+  steps: 
+    - name: Set Environment Variable
+      id: global
+      shell: bash
+      run: |
+        if [ "${{ github.ref_name }}" = ${{  github.event.repository.default_branch }} ]; then
+          echo "ENVIRONMENT=Development" >> $GITHUB_OUTPUT
+          echo "ENVIRONMENT_SUFFIX=_DEV" >> $GITHUB_OUTPUT
+        elif [[ ${{ github.ref_name }} == v* ]] && [[  ${{ github.ref_name }} =~ (rc|alpha|beta) ]]; then
+          echo "ENVIRONMENT=Staging" >> $GITHUB_OUTPUT
+          echo "ENVIRONMENT_SUFFIX=_STG" >> $GITHUB_OUTPUT
+        elif [[ ${{ github.ref_name }} == v* ]] && [[ ! ${{ github.ref_name }} =~ (rc|alpha|beta) ]]; then
+          echo "ENVIRONMENT=Production" >> $GITHUB_OUTPUT
+          echo "ENVIRONMENT_SUFFIX=_PRD" >> $GITHUB_OUTPUT
+        else
+          echo "Branch or Tag : ${{ github.ref_name }} does not support deployment"
+          exit 1
+        fi
+

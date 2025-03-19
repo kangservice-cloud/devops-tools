@@ -1,0 +1,42 @@
+name: Rollout History Deployment
+
+on:
+  workflow_call:
+    inputs:
+      kube_config:
+        required: true
+        type: string
+      namespace:
+        description: 'Namespace'
+        required: true
+        type: string
+      app_name:
+        description: 'App Name'
+        required: true
+        type: string
+      use_self_runner:
+        description: 'Use self runner'
+        type: boolean
+        required: true
+        default: false
+        
+jobs:
+  RestartK3s:
+    runs-on: ${{ (inputs.use_self_runner) && fromJSON('[ "self-hosted"]') || fromJSON('[ "ubuntu-latest"]') }}
+    container:
+      image: ionehouten/devops:ubuntu-22-04
+      options: --user root
+    steps:
+      - name: Rollout Deployment
+        working-directory: /home/devops
+        shell: bash
+        env:
+          NAMESPACE: ${{ inputs.namespace }}
+          APP_NAME: ${{ inputs.app_name }}
+          KUBE_CONFIG: ${{ secrets[inputs.kube_config] }}
+        run: |
+          echo $KUBE_CONFIG | base64 --decode > /home/devops/.kube/config
+          export KUBECONFIG=/home/devops/.kube/config
+          kubectl rollout history deployment -n $NAMESPACE $APP_NAME
+          kubectl get deployment -n $NAMESPACE $APP_NAME
+

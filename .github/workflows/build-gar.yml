@@ -1,0 +1,107 @@
+name: Build Google Artifact Registry
+
+on:
+  workflow_call:
+    inputs:
+      namespace:
+        required: false
+        type: string
+      image_name:
+        required: true
+        type: string
+      image_suffix:
+        required: true
+        type: string
+      migration_folder:
+        required: false
+        type: string
+      context:
+        required: false
+        type: string
+        default: .
+      dockerfile:
+        required: false
+        type: string
+        default: Dockerfile
+    outputs:
+      run_migration:
+        description: "Run Migration"
+        value: ${{ jobs.BuildGAR.outputs.run_migration }}
+
+jobs:
+  BuildGAR:
+    runs-on: ubuntu-latest
+    outputs:
+      run_migration: ${{ steps.check_migration.outputs.run_migration }}      
+    steps: 
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Versioning
+        id: Versioning
+        uses: mgt-dev/mgt-devops-tools/.github/actions/versioning-action@master
+        with:
+          registry_image: ${{ secrets.REGISTRY }}/${{ inputs.image_name }}
+          image_suffix: ${{ inputs.image_suffix }}
+
+      - name: Check Migrations files
+        uses: dorny/paths-filter@v3
+        id: check_migration
+        if: ${{ inputs.migration_folder }} != ""
+        with:
+          filters: |
+            run_migration:
+              - '${{ inputs.migration_folder }}/**'
+
+      - name: Build
+        shell: bash
+        env:
+          NAMESPACE: ${{ inputs.namespace }}
+        run: |
+          echo "${{ steps.Versioning.outputs.short_sha }}"
+          echo "${{ steps.Versioning.outputs.version }}"
+          echo "${{ steps.Versioning.outputs.image_tag }}"
+          echo "${{ steps.Versioning.outputs.image_tag_latest }}"
+          echo "IMAGE_TAG=${{ steps.Versioning.outputs.image_tag }}" >> build.env
+          echo "IMAGE_TAG_LATEST=${{ steps.Versioning.outputs.image_tag_latest }}" >> build.env
+
+          if test -f $GITHUB_WORKSPACE/deploy/before-build.sh; then
+            echo "Before build exists."
+            cd $GITHUB_WORKSPACE/deploy/ && chmod +x before-build.sh && bash before-build.sh || true
+          fi
+          
+          cp -rf $GITHUB_WORKSPACE/deploy/patch/.  $GITHUB_WORKSPACE/ || true
+
+          ls -lrtha $GITHUB_WORKSPACE
+
+      - name: Authenticate with Google Cloud
+        id: auth
+        uses: "google-github-actions/auth@v2"
+        with:
+          token_format: access_token
+          credentials_json: "${{ secrets.GCP_SA_REGISTRY }}"
+
+      - name: Login to Artifact Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.REGISTRY }}
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.context }}/${{ inputs.dockerfile }}
+          push: true
+          tags: |
+            ${{ steps.Versioning.outputs.image_tag }}
+            ${{ steps.Versioning.outputs.image_tag_latest }}
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build
+          path: build.env

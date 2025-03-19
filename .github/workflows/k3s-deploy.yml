@@ -1,0 +1,103 @@
+name: Deploy On Premise Kubernetes
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      kube_config:
+        required: true
+        type: string
+      namespace:
+        description: 'Namespace'
+        required: true
+        type: string
+      project_name:
+        description: 'K8s Project name'
+        required: true
+        type: string
+      app_name:
+        description: 'App Name'
+        required: true
+        type: string
+      image_name:
+        description: 'Image Registry'
+        required: true
+        type: string
+      timeout_minutes:
+        description: 'Deploy Timeout'
+        required: false
+        type: number
+        default: 5
+      use_self_runner:
+        description: 'Use self runner'
+        type: boolean
+        required: true
+        default: false
+        
+jobs:
+  DeployK3s:
+    name: Deploy ${{ inputs.environment }}
+    runs-on: ${{ (inputs.use_self_runner) && fromJSON('[ "self-hosted"]') || fromJSON('[ "ubuntu-latest"]') }}
+    timeout-minutes:  ${{ inputs.timeout_minutes }}
+    container:
+      image: ionehouten/devops:ubuntu-22-04
+      options: --user root
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Download Build Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build
+      - name: Check Env
+        shell: bash
+        run: |
+          env
+      - name: Pull Devops Project
+        working-directory: /home/devops
+        shell: bash
+        run: |
+          env
+          cat $GITHUB_WORKSPACE/build.env
+          source  $GITHUB_WORKSPACE/build.env
+          echo "Image Tag: $IMAGE_TAG"
+          mkdir -p cicd && cd cicd && git init && git remote add origin ${{ secrets.DEVOPS_PROJECT }} && git pull origin master && ls -lrtha
+  
+      - name: Restart Deployment
+        working-directory: /home/devops
+        shell: bash
+        env:
+          PROJECT_NAME: /home/devops/cicd/Kubernetes/${{ inputs.project_name }}
+          NAMESPACE: ${{ inputs.namespace }}
+          APP_NAME: ${{ inputs.app_name }}
+          REGISTRY_IMAGE: ${{ secrets.REGISTRY }}/${{ inputs.image_name }}
+          KUBE_CONFIG: ${{ secrets[inputs.kube_config] }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          source  $GITHUB_WORKSPACE/build.env
+          echo "Image Tag: $IMAGE_TAG"
+          echo $KUBE_CONFIG | base64 --decode > /home/devops/.kube/config
+          export KUBECONFIG=/home/devops/.kube/config
+          mkdir -p $PROJECT_NAME/$APP_NAME/
+          cp -rf $GITHUB_WORKSPACE/deploy/.  $PROJECT_NAME/$APP_NAME/ || true
+          cd $PROJECT_NAME/$APP_NAME/overlays/$NAMESPACE &&  kustomize edit set image $REGISTRY_IMAGE=$IMAGE_TAG 
+          cd $PROJECT_NAME/$APP_NAME/overlays/$NAMESPACE &&  kustomize edit add annotation kubernetes.io/change-cause:"$COMMIT_MESSAGE" --force
+          kubectl apply -k $PROJECT_NAME/$APP_NAME/overlays/$NAMESPACE
+          kubectl rollout status deployment -n $NAMESPACE $APP_NAME
+          kubectl get deployment -n $NAMESPACE $APP_NAME
+
+      - name: Update Devops Project 
+        working-directory: /home/devops/cicd
+        shell: bash
+        env:
+          NAMESPACE: ${{ inputs.namespace }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          source  $GITHUB_WORKSPACE/build.env
+          git config --global user.email "devops@kangservice.cloud" || true
+          git config --global user.name "$GITHUB_ACTOR" || true
+          git add -u && git commit --allow-empty -m "Deployment: $NAMESPACE | $IMAGE_TAG | $COMMIT_MESSAGE" || true
+          git push origin master || true

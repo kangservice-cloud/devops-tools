@@ -1,0 +1,66 @@
+name: Versioning
+description: 'Create Versioning'
+
+inputs:
+  registry_image:
+    description: "Container Registry Path"
+    required: true
+  image_suffix:
+    description: "Image Suffix"
+
+
+outputs:
+  short_sha:
+    description: "Commit SHA"
+    value: ${{ steps.short_sha.outputs.SHORT_SHA }}
+  version:
+    description: "Version"
+    value: ${{ steps.version.outputs.VERSION }}
+  image_tag:
+    description: "Image Tag"
+    value: ${{ steps.version.outputs.IMAGE_TAG }}
+  image_tag_latest:
+    description: "Image Tag Latest"
+    value: ${{ steps.version.outputs.IMAGE_TAG_LATEST }}
+runs:
+  using: "composite"
+  steps: 
+    - name: Get Commit SHA
+      id: short_sha
+      shell: bash
+      run: |
+        echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+    - name: Set Image Version
+      id: version
+      shell: bash
+      run: |
+        IMAGE_SUFFIX="${{ inputs.image_suffix }}"
+        REGISTRY="${{ inputs.registry_image }}"
+
+        if [ ! -z ${IMAGE_SUFFIX} ] ; then
+          IMAGE_SUFFIX="-$IMAGE_SUFFIX"
+        fi
+
+        if [ "${{ github.ref_name }}" = ${{  github.event.repository.default_branch }} ]; then
+            # VERSION="latest"
+            VERSION="${{ steps.short_sha.outputs.SHORT_SHA }}"
+            echo "Masuk Master"
+        elif [[ ${{ github.ref_name }} == v* ]]; then
+            VERSION="${{ github.ref_name }}"
+            echo "Masuk Tagging"
+        else \
+            NOSLASH=$(echo "${{ github.ref_name }}" | tr -s / - )
+            SANITIZED="${NOSLASH//[^a-zA-Z0-9\-]/}"
+            VERSION="branch-$SANITIZED"
+            echo "Masuk Branch"
+        fi
+        export IMAGE_TAG=$REGISTRY:$VERSION$IMAGE_SUFFIX
+        export IMAGE_TAG_LATEST=$REGISTRY:latest$IMAGE_SUFFIX
+
+        echo "Image Tag : $IMAGE_TAG"
+        echo "Image Tag Latest : $IMAGE_TAG_LATEST"
+        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+        echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_OUTPUT
+        echo "IMAGE_TAG_LATEST=$IMAGE_TAG_LATEST" >> $GITHUB_OUTPUT
+
+    

@@ -1,0 +1,70 @@
+name: Build Google Artifact Registry
+
+on:
+  workflow_call:
+    inputs:
+      image_name:
+        required: true
+        type: string
+      image_suffix:
+        required: true
+        type: string
+      migration_folder:
+        required: false
+        type: string
+    outputs:
+      run_migration:
+        description: "Run Migration"
+        value: ${{ jobs.RetagGHCR.outputs.run_migration }}
+        
+jobs:
+  RetagGHCR:
+    runs-on: ubuntu-latest
+    outputs:
+      run_migration: ${{ steps.check_migration.outputs.run_migration }}
+    steps: 
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Versioning
+        id: Versioning
+        uses: mgt-dev/mgt-devops-tools/.github/actions/versioning-action@master
+        with:
+          registry_image: ${{ secrets.REGISTRY }}/${{ inputs.image_name }}
+          image_suffix: ${{ inputs.image_suffix }}
+
+      - name: Check Migrations files
+        uses: dorny/paths-filter@v3
+        id: check_migration
+        if: ${{ inputs.migration_folder }} != ""
+        with:
+          filters: |
+            run_migration:
+              - '${{ inputs.migration_folder }}/**'
+
+      - name: Build
+        run: |
+          echo "${{ steps.Versioning.outputs.short_sha }}"
+          echo "${{ steps.Versioning.outputs.version }}"
+          echo "${{ steps.Versioning.outputs.image_tag }}"
+          echo "${{ steps.Versioning.outputs.image_tag_latest }}"
+          echo "IMAGE_TAG=${{ steps.Versioning.outputs.image_tag }}" >> build.env
+          echo "IMAGE_TAG_LATEST=${{ steps.Versioning.outputs.image_tag_latest }}" >> build.env
+
+      - uses: imjasonh/setup-crane@v0.1
+      - env:
+          registry: ${{ secrets.REGISTRY }}
+          source_image: ${{ secrets.REGISTRY }}/${{ inputs.image_name }}:${{ steps.Versioning.outputs.short_sha }}
+          target_tag: ${{ steps.Versioning.outputs.version }}${{ inputs.image_suffix }}
+          username: ${{ github.actor }}
+          auth_token:  ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "${auth_token}" | crane auth login ${registry} --username ${username} --password-stdin
+          crane tag ${source_image} ${target_tag}
+          crane tag ${source_image} latest
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build
+          path: build.env
