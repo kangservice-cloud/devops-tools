@@ -1,0 +1,67 @@
+# Workflow name
+name: Build Docker
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Environment'
+        required: true
+        type: string
+      region:
+        description: 'AWS Region'
+        type: string
+        default: ap-southeast-3
+      image_repo:
+        description: 'ECR Repository Name'
+        required: true
+        type: string
+      image_env:
+        description: 'Image Environment'
+        required: true
+        type: string
+    outputs:
+      image_repo:
+        description: "Image Repository"
+        value: ${{ jobs.Build.outputs.image_repo }}
+      image_tag :
+        description: "Image Tag"
+        value: ${{ jobs.Build.outputs.image_tag }}
+
+
+jobs:
+  Build:
+    name: Build ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ inputs.region }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & Push Docker Image
+        id: build
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          make ${{ inputs.image_env }}
+          echo "IMAGE_REPO=${{ env.REGISTRY }}/${{ inputs.image_repo }}" >> $GITHUB_OUTPUT
+          
+          if [[ ${{ github.ref_name }} == v* ]]; then
+            echo "IMAGE_TAG=${{ inputs.image_env }}-${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else \
+            echo "IMAGE_TAG=${{ inputs.image_env }}-${{ github.sha }}" >> $GITHUB_OUTPUT
+          fi
+    outputs:
+      image_repo: ${{ steps.build.outputs.IMAGE_REPO }}
+      image_tag: ${{ steps.build.outputs.IMAGE_TAG }}
+      
