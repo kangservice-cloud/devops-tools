@@ -15,10 +15,10 @@ on:
     outputs:
       run_migration:
         description: "Run Migration"
-        value: ${{ jobs.RetagGAR.outputs.run_migration }}
+        value: ${{ jobs.Retag.outputs.run_migration }}
         
 jobs:
-  RetagGAR:
+  Retag:
     runs-on: ubuntu-latest
     outputs:
       run_migration: ${{ steps.check_migration.outputs.run_migration }}
@@ -28,7 +28,7 @@ jobs:
 
       - name: Versioning
         id: Versioning
-        uses: mgt-dev/mgt-devops-tools/.github/actions/versioning-action@master
+        uses: kangservice-cloud/devops-tools/.github/actions/versioning-action@main
         with:
           registry_image: ${{ secrets.REGISTRY }}/${{ inputs.image_name }}
           image_suffix: ${{ inputs.image_suffix }}

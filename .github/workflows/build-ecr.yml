@@ -27,10 +27,10 @@ on:
     outputs:
       run_migration:
         description: "Run Migration"
-        value: ${{ jobs.BuildGHCR.outputs.run_migration }}
+        value: ${{ jobs.Build.outputs.run_migration }}
 
 jobs:
-  BuildGHCR:
+  Build:
     runs-on: ubuntu-latest
     outputs:
       run_migration: ${{ steps.check_migration.outputs.run_migration }}
