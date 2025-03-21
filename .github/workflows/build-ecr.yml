@@ -1,0 +1,95 @@
+name: Build Github Container Registry
+
+on:
+  workflow_call:
+    inputs:
+      image_name:
+        required: true
+        type: string
+      image_suffix:
+        required: true
+        type: string
+      migration_folder:
+        required: false
+        type: string
+      region:
+        description: 'AWS Region'
+        type: string
+        default: ap-southeast-3
+      context:
+        required: false
+        type: string
+        default: .
+      dockerfile:
+        required: false
+        type: string
+        default: Dockerfile
+    outputs:
+      run_migration:
+        description: "Run Migration"
+        value: ${{ jobs.BuildGHCR.outputs.run_migration }}
+
+jobs:
+  BuildGHCR:
+    runs-on: ubuntu-latest
+    outputs:
+      run_migration: ${{ steps.check_migration.outputs.run_migration }}
+    steps: 
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Versioning
+        id: Versioning
+        uses: kangservice-cloud/devops-tools/.github/actions/versioning-action@main
+        with:
+          registry_image: ${{ secrets.REGISTRY }}/${{ inputs.image_name }}
+          image_suffix: ${{ inputs.image_suffix }}
+
+      - name: Check Migrations files
+        uses: dorny/paths-filter@v3
+        id: check_migration
+        if: ${{ inputs.migration_folder }} != ""
+        with:
+          filters: |
+            run_migration:
+              - '${{ inputs.migration_folder }}/**'
+      
+      - name: Build
+        run: |
+          echo "${{ steps.Versioning.outputs.short_sha }}"
+          echo "${{ steps.Versioning.outputs.version }}"
+          echo "${{ steps.Versioning.outputs.image_tag }}"
+          echo "${{ steps.Versioning.outputs.image_tag_latest }}"
+          echo "IMAGE_TAG=${{ steps.Versioning.outputs.image_tag }}" >> build.env
+          echo "IMAGE_TAG_LATEST=${{ steps.Versioning.outputs.image_tag_latest }}" >> build.env
+          cp -rf $GITHUB_WORKSPACE/deploy/patch/.  $GITHUB_WORKSPACE/ || true
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ inputs.region }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.context }}/${{ inputs.dockerfile }}
+          push: true
+          tags: |
+            ${{ steps.Versioning.outputs.image_tag }}
+            ${{ steps.Versioning.outputs.image_tag_latest }}
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build
+          path: build.env
