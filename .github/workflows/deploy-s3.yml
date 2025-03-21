@@ -1,0 +1,55 @@
+# Workflow name
+name: Deploy S3
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Environment'
+        required: true
+        type: string
+      region:
+        description: 'AWS Region'
+        type: string
+        default: ap-southeast-3
+      s3_endpoint:
+        description: 'S3 Endpoint'
+        type: string
+      cf_id:
+        description: 'Cloudfront ID'
+        type: string
+      output_dir:
+        description: 'Output Directory'
+        type: string
+        default: dist
+
+jobs:
+  DeployS3:
+    name: Deploy S3 ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ inputs.region }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: build
+
+
+      - name: Copy to S3 Bucket
+        run: |
+          echo "Environment : ${{ inputs.environment }}"
+          echo "Region : ${{ inputs.region }}"
+          echo "S3 Endpoint : ${{ inputs.s3_endpoint }}"
+          echo "Cloudflare ID : ${{ inputs.cf_id }}"
+          echo "Output Dir : ${{ inputs.output_dir }}"
+          ls -lrtha
+          aws s3 sync   ${{ inputs.output_dir }} ${{ inputs.s3_endpoint }} 
+        
+      - name: Invalidate CloudFront
+        run: |
+          aws cloudfront create-invalidation --distribution-id ${{ inputs.cf_id }}  --paths "/*"
