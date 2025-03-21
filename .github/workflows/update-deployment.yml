@@ -1,0 +1,59 @@
+# Workflow name
+name: Update Deployment
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Environment'
+        required: true
+        type: string
+      service_name:
+        description: 'Service Name'
+        required: true
+        type: string
+      devops_repo:
+        description: 'Devops Repository Example kangservice-cloud/devops'
+        type: string
+        required: true
+      devops_branch:
+        description: 'Devops Repository Branch'
+        type: string
+        default: master
+      property_path:
+        description: 'YAML property Path in Devops Repository'
+        type: string
+        default: spec.template.spec.containers.0.image
+      image_repo:
+        description: 'Image Repository'
+        required: true
+        type: string
+      image_tag:
+        description: 'Image Tag'
+        required: true
+        type: string
+
+
+jobs:
+  Update:
+    name: Update ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Infra Repository
+        uses: actions/checkout@v2
+        with:
+          repository: ${{ inputs.devops_repo }}
+          path: infra
+          ref: ${{ inputs.devops_branch }}
+          token: ${{ secrets.PA_TOKEN }}
+      - name: Update Deployment
+        uses: fjogeleit/yaml-update-action@main
+        with:
+          valueFile: '${{ inputs.devops_branch }}/${{ inputs.service_name }}/${{ inputs.service_name }}-deployment.yaml'
+          propertyPath: ${{ inputs.property_path }}
+          value: ${{ inputs.image_repo }}:${{ inputs.image_tag }}
+          branch: ${{ inputs.devops_branch }}
+          repository: ${{ inputs.devops_repo }}
+          message: 'Update ${{ inputs.service_name }} image version to stag-${{ github.sha }}' 
+          workDir: infra
+          token: ${{ secrets.PA_TOKEN }}
